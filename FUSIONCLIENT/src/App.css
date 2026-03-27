@@ -1,0 +1,6 @@
+/* Cleaned up App.css - now leveraging Mantine components and index.css standard classes */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
