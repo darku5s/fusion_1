@@ -1,10 +1,12 @@
 from rest_framework import serializers
 
 from applications.vms.models import (
+    BlacklistEntry,
     DenialLog,
     EntryExitLog,
     ID_TYPES,
     SecurityIncident,
+    VMSSetting,
     VerificationLog,
     Visit,
     Visitor,
@@ -66,6 +68,18 @@ class VisitSerializer(serializers.ModelSerializer):
             return obj.visitor_pass.authorized_zones
         except VisitorPass.DoesNotExist:
             return ""
+
+
+class BlacklistEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlacklistEntry
+        fields = "__all__"
+
+
+class VMSSettingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VMSSetting
+        fields = "__all__"
 
 
 class RegisterVisitorSerializer(serializers.Serializer):

@@ -1,4 +1,4 @@
-import { Table, Badge, Card, Text } from '@mantine/core';
+import { Table, Badge, Card, Text, ScrollArea } from '@mantine/core';
 import { getStatusClass, mapVisitStatus } from './helpers';
 
 const statusColors = {
@@ -26,11 +26,13 @@ function VmsTable({ rows, title }) {
       <Text weight={700} mb="sm">
         {title}
       </Text>
-      <Table highlightOnHover striped>
+      <ScrollArea h={300} offsetScrollbars>
+        <Table highlightOnHover striped>
         <thead>
           <tr>
             <th>Visit ID</th>
             <th>Visitor</th>
+            <th>ID Number</th>
             <th>Purpose</th>
             <th>Host</th>
             <th>Status</th>
@@ -41,9 +43,13 @@ function VmsTable({ rows, title }) {
           {rows.map((visit) => {
             const status = mapVisitStatus(visit.status).toLowerCase();
             return (
-              <tr key={visit.id}>
+              <tr key={visit.id} style={visit.is_vip ? { backgroundColor: '#fff9db', borderLeft: '4px solid #fcc419' } : {}}>
                 <td>{visit.id}</td>
-                <td>{visit.visitor?.full_name || '-'}</td>
+                <td>
+                  {visit.visitor?.full_name || '-'}
+                  {visit.is_vip && <Badge color="yellow" size="sm" ml="xs">VIP</Badge>}
+                </td>
+                <td>{visit.visitor?.id_number || '-'}</td>
                 <td>{visit.purpose || '-'}</td>
                 <td>{visit.host_name || '-'}</td>
                 <td>
@@ -57,6 +63,7 @@ function VmsTable({ rows, title }) {
           })}
         </tbody>
       </Table>
+      </ScrollArea>
     </Card>
   );
 }

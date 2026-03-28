@@ -3,8 +3,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from django.http import HttpResponse
+from django.utils import timezone
+
+from applications.vms.models import DenialLog, Visit
 
 from applications.vms.api.serializers import (
+    BlacklistEntrySerializer,
     DenialLogSerializer,
     DenyEntrySerializer,
     IssuePassSerializer,
@@ -14,18 +18,27 @@ from applications.vms.api.serializers import (
     SecurityIncidentSerializer,
     VisitSerializer,
     VerifyVisitorSerializer,
+    VMSSettingSerializer,
     VisitorPassSerializer,
 )
 from applications.vms.selectors import get_active_visitors, get_incidents, get_recent_visits
 from applications.vms.services import (
     RegistrationError,
     WorkflowError,
+    clear_blacklist_entry,
     deny_entry,
+    export_visitors_as_json,
+    generate_visitor_report,
+    get_blacklist_entries,
+    get_system_settings,
+    import_visitors_list,
     issue_pass,
     log_incident,
     record_entry,
     record_exit,
     register_visitor,
+    set_blacklist_entry,
+    set_system_setting,
     verify_visitor,
 )
 
@@ -127,6 +140,103 @@ class DenyEntryView(APIView):
             {"detail": "Visit denied.", "visit_status": visit.status, "denial_log": DenialLogSerializer(denial_log).data},
             status=200,
         )
+
+
+class ApproveVisitView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        visit_id = request.data.get("visit_id")
+        approved = bool(request.data.get("approved", True))
+        if not visit_id:
+            return Response({"detail": "visit_id required"}, status=400)
+
+        try:
+            visit = Visit.objects.get(pk=visit_id)
+        except Visit.DoesNotExist:
+            return Response({"detail": "Visit not found"}, status=404)
+
+        if approved:
+            if visit.status in [Visit.REGISTERED, Visit.DENIED]:
+                visit.status = Visit.ID_VERIFIED
+                visit.verified_at = timezone.now()
+                visit.denial_reason = ""
+                visit.denial_remarks = ""
+            visit.save(update_fields=["status", "verified_at", "denial_reason", "denial_remarks"])
+            return Response({"detail": "Visit approved." , "visit_status": visit.status}, status=200)
+
+        visit.status = Visit.DENIED
+        visit.denial_reason = request.data.get("reason", "Host rejected")
+        visit.denial_remarks = request.data.get("remarks", "")
+        visit.save(update_fields=["status", "denial_reason", "denial_remarks"])
+        DenialLog.objects.create(
+            visit=visit,
+            reason=visit.denial_reason,
+            remarks=visit.denial_remarks,
+            escalated=bool(request.data.get("escalated", False)),
+        )
+        return Response({"detail": "Visit rejected.", "visit_status": visit.status}, status=200)
+
+
+class BlacklistView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        active = request.query_params.get("active", "true").lower() != "false"
+        entries = get_blacklist_entries(active_only=active)
+        return Response(BlacklistEntrySerializer(entries, many=True).data, status=200)
+
+    def post(self, request):
+        serializer = BlacklistEntrySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        entry = set_blacklist_entry(serializer.validated_data)
+        return Response(BlacklistEntrySerializer(entry).data, status=201)
+
+
+class BlacklistEntryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, id_number):
+        clear_blacklist_entry(id_number)
+        return Response({"detail": "Blacklist entry deactivated."}, status=204)
+
+
+class ReportsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(generate_visitor_report(), status=200)
+
+
+class SettingsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(get_system_settings(), status=200)
+
+    def post(self, request):
+        key = request.data.get("key")
+        value = request.data.get("value")
+        description = request.data.get("description", "")
+        if not key or value is None:
+            return Response({"detail": "key and value required"}, status=400)
+        setting = set_system_setting(key, value, description)
+        return Response(VMSSettingSerializer(setting).data, status=200)
+
+
+class ImportExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        data = export_visitors_as_json()
+        return Response(data, status=200)
+
+    def post(self, request):
+        visitors = request.data.get("visitors")
+        if not isinstance(visitors, list):
+            return Response({"detail": "visitors must be a list"}, status=400)
+        created = import_visitors_list(visitors)
+        return Response({"imported": len(created)}, status=201)
 
 
 class ActiveVisitorsView(APIView):
@@ -272,6 +382,25 @@ def vms_ui(request):
         <button class="btn" onclick="fetchGet('/active/')">GET /active/</button>
         <button class="btn" onclick="fetchGet('/recent/')">GET /recent/</button>
         <button class="btn" onclick="fetchGet('/incidents/')">GET /incidents/</button>
+        <button class="btn" onclick="fetchGet('/reports/')">GET /reports/</button>
+        <button class="btn" onclick="fetchGet('/settings/')">GET /settings/</button>
+        <button class="btn" onclick="fetchGet('/blacklist/')">GET /blacklist/</button>
+      </div>
+
+      <div class="card">
+        <h3>Host Actions</h3>
+        <div class="row">
+          <input id="approve_visit_id" placeholder="Visit id" />
+          <input id="approve_status" placeholder="approved true/false" value="true" />
+        </div>
+        <input id="approve_reason" placeholder="Reject reason" />
+        <button class="btn" onclick="approveVisit()">POST /approve/</button>
+      </div>
+
+      <div class="card">
+        <h3>Import / Export</h3>
+        <button class="btn" onclick="fetchGet('/import-export/')">GET /import-export/</button>
+        <button class="btn" onclick="importVisitors()">POST /import-export/</button>
       </div>
     </div>
 
@@ -382,6 +511,29 @@ def vms_ui(request):
         reason: document.getElementById("deny_reason").value,
         remarks: document.getElementById("deny_remarks").value,
         escalated: false
+      });
+    }
+
+    function approveVisit() {
+      apiPost("/approve/", {
+        visit_id: Number(document.getElementById("approve_visit_id").value),
+        approved: parseBool(document.getElementById("approve_status").value),
+        reason: document.getElementById("approve_reason").value,
+      });
+    }
+
+    function importVisitors() {
+      const sample = [
+        {
+          id_number: "VIP-001",
+          full_name: "Import Test",
+          id_type: "national_id",
+          contact_phone: "9999999999",
+          contact_email: "import@test.com"
+        }
+      ];
+      apiPost("/import-export/", {
+        visitors: sample
       });
     }
   </script>

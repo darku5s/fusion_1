@@ -43,6 +43,16 @@ class BlacklistEntry(models.Model):
         return f"{self.id_number} ({'active' if self.active else 'inactive'})"
 
 
+class VMSSetting(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    value = models.CharField(max_length=400)
+    description = models.CharField(max_length=400, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.key} = {self.value}"
+
+
 class Visit(models.Model):
     REGISTERED = "registered"
     ID_VERIFIED = "id_verified"

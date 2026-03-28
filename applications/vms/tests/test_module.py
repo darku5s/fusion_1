@@ -100,3 +100,45 @@ class VmsModuleTests(TestCase):
         resp = self.client.get("/vms/active/")
         self.assertEqual(resp.status_code, 200)
 
+    def test_reports_endpoint(self):
+        resp = self.client.get("/vms/reports/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("total_visitors", resp.data)
+
+    def test_blacklist_management(self):
+        resp = self.client.post("/vms/blacklist/", data={"id_number": "BAD01", "reason": "Policy", "active": True}, format="json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["id_number"], "BAD01")
+
+    def test_host_approve_reject(self):
+        _, visit = register_visitor(
+            {
+                "full_name": "Charles",
+                "id_number": "IDAPPROVE",
+                "id_type": "passport",
+                "contact_phone": "8888888888",
+                "contact_email": "",
+                "photo_reference": "",
+                "purpose": "Meeting",
+                "host_name": "Host",
+                "host_department": "Dept",
+                "host_contact": "",
+                "expected_duration_minutes": 60,
+                "is_vip": False,
+            }
+        )
+        resp = self.client.post("/vms/approve/", data={"visit_id": visit.id, "approved": True}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["visit_status"], "id_verified")
+
+    def test_import_export_visitors(self):
+        resp = self.client.post(
+            "/vms/import-export/",
+            data={"visitors": [{"id_number": "IMP1", "full_name": "Imported", "id_type": "aadhaar", "contact_phone": "7777777777"}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        resp = self.client.get("/vms/import-export/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(resp.data, list)
+

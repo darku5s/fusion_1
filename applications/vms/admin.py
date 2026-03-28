@@ -5,6 +5,7 @@ from .models import (
     DenialLog,
     EntryExitLog,
     SecurityIncident,
+    VMSSetting,
     VerificationLog,
     Visit,
     Visitor,
@@ -20,4 +21,5 @@ admin.site.register(VerificationLog)
 admin.site.register(DenialLog)
 admin.site.register(EntryExitLog)
 admin.site.register(SecurityIncident)
+admin.site.register(VMSSetting)
 

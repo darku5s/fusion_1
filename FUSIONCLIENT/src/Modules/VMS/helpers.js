@@ -21,8 +21,19 @@ export function getStatusClass(status) {
 }
 
 export function parseError(error) {
-  if (error?.response?.data?.detail) return error.response.data.detail;
-  if (error?.response?.data?.error) return error.response.data.error;
+  if (error?.response?.data) {
+    const data = error.response.data;
+    if (data.detail) return data.detail;
+    if (data.error) return data.error;
+    
+    // Check for DRF field validation errors (e.g. {"full_name": ["This field is required."]})
+    const keys = Object.keys(data);
+    if (keys.length > 0 && Array.isArray(data[keys[0]])) {
+        return `${keys[0]}: ${data[keys[0]][0]}`;
+    }
+    
+    return JSON.stringify(data);
+  }
   if (typeof error?.message === "string") return error.message;
   return "Request failed. Please try again.";
 }

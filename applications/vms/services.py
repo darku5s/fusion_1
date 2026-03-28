@@ -10,6 +10,7 @@ from .models import (
     DenialLog,
     EntryExitLog,
     SecurityIncident,
+    VMSSetting,
     VerificationLog,
     Visit,
     Visitor,
@@ -199,4 +200,85 @@ def log_incident(data, user):
         description=data["description"],
     )
     return incident
+
+
+def get_blacklist_entries(active_only=True):
+    queryset = BlacklistEntry.objects.all().order_by("-created_at")
+    if active_only:
+        queryset = queryset.filter(active=True)
+    return queryset
+
+
+@transaction.atomic
+def set_blacklist_entry(data):
+    entry, _ = BlacklistEntry.objects.update_or_create(
+        id_number=data["id_number"],
+        defaults={
+            "reason": data.get("reason", "") ,
+            "active": bool(data.get("active", True)),
+        },
+    )
+    return entry
+
+
+@transaction.atomic
+def clear_blacklist_entry(id_number):
+    BlacklistEntry.objects.filter(id_number=id_number).update(active=False)
+
+
+def get_system_settings():
+    return {s.key: s.value for s in VMSSetting.objects.all()}
+
+
+@transaction.atomic
+def set_system_setting(key: str, value: str, description: str = ""):
+    setting, _ = VMSSetting.objects.update_or_create(
+        key=key,
+        defaults={"value": value, "description": description},
+    )
+    return setting
+
+
+def generate_visitor_report():
+    from django.db.models import Count
+
+    total_visitors = Visitor.objects.count()
+    total_visits = Visit.objects.count()
+    active_visits = Visit.objects.filter(status__in=[Visit.INSIDE, Visit.PASS_ISSUED]).count()
+    vip_visits = Visit.objects.filter(is_vip=True).count()
+    denied_visits = Visit.objects.filter(status=Visit.DENIED).count()
+    incidents_by_severity = (
+        SecurityIncident.objects.values("severity").annotate(count=Count("id")).order_by("severity")
+    )
+
+    return {
+        "total_visitors": total_visitors,
+        "total_visits": total_visits,
+        "active_visits": active_visits,
+        "vip_visits": vip_visits,
+        "denied_visits": denied_visits,
+        "incidents_by_severity": list(incidents_by_severity),
+    }
+
+
+@transaction.atomic
+def import_visitors_list(items):
+    created = []
+    for item in items:
+        v, _ = Visitor.objects.update_or_create(
+            id_number=item["id_number"],
+            defaults={
+                "full_name": item.get("full_name", ""),
+                "id_type": item.get("id_type", "passport"),
+                "contact_phone": item.get("contact_phone", ""),
+                "contact_email": item.get("contact_email", ""),
+                "photo_reference": item.get("photo_reference", ""),
+            },
+        )
+        created.append(v)
+    return created
+
+
+def export_visitors_as_json():
+    return list(Visitor.objects.values())
 
