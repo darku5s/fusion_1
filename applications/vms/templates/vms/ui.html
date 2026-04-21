@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VMS Debug Interface</title>
+  <style>
+    body { font-family: 'Inter', sans-serif; margin: 0; background: #f1f5f9; color: #334155; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    .header { margin-bottom: 2rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); padding: 1.5rem; }
+    h1 { color: #1e293b; margin: 0; font-size: 1.875rem; }
+    h3 { margin-top: 0; color: #475569; font-size: 1.125rem; border-left: 4px solid #3b82f6; padding-left: 0.75rem; }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-size: 0.875rem; font-weight: 600; color: #64748b; }
+    input, textarea, select, button { width: 100%; padding: 0.625rem; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 0.875rem; }
+    input:focus { outline: 2px solid #3b82f6; border-color: transparent; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .btn { cursor: pointer; background: #2563eb; color: white; border: none; font-weight: 600; transition: background 0.2s; margin-top: 1rem; }
+    .btn:hover { background: #1d4ed8; }
+    .btn.secondary { background: #64748b; }
+    .btn.secondary:hover { background: #475569; }
+    pre { background: #1e293b; color: #f8fafc; border-radius: 8px; padding: 1rem; overflow-x: auto; min-height: 150px; font-size: 0.875rem; }
+    .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: #dcfce7; color: #166534; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>VMS Admin / Guard Debugger <span class="badge" aria-label="Status: Operational">V2.0</span></h1>
+      <p style="color: #64748b;">Tool for verifying workflows and auditing perfection metrics.</p>
+    </div>
+
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <h3>Session Configuration</h3>
+      <div class="row">
+        <div>
+          <label for="token">Auth Token (DRF)</label>
+          <input id="token" placeholder="Paste DRF token" aria-required="true" />
+        </div>
+        <div>
+          <label for="baseUrl">API Base Path</label>
+          <input id="baseUrl" value="/vms" />
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>1. Registration (Self)</h3>
+        <label for="full_name">Visitor Full Name</label>
+        <input id="full_name" placeholder="John Doe" />
+        <div class="row">
+          <div>
+            <label for="id_type">ID Type</label>
+            <select id="id_type">
+              <option value="passport">Passport</option>
+              <option value="national_id">National ID</option>
+              <option value="aadhaar">Aadhaar</option>
+            </select>
+          </div>
+          <div>
+            <label for="id_number">ID Number</label>
+            <input id="id_number" placeholder="Unique ID" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="purpose">Purpose</label>
+            <input id="purpose" placeholder="Meeting" />
+          </div>
+          <div>
+            <label for="host_user_id">Host User ID (Optional)</label>
+            <input id="host_user_id" placeholder="FK to User" />
+          </div>
+        </div>
+        <button class="btn" onclick="registerVisitor()">Register Request</button>
+      </div>
+
+      <div class="card">
+        <h3>2. Host / Guard Workflow</h3>
+        <label for="visit_id">Target Visit ID</label>
+        <input id="visit_id" placeholder="Primary Key" />
+        <div class="row">
+          <button class="btn secondary" onclick="approveVisit(true)">Approve (Host)</button>
+          <button class="btn secondary" onclick="approveVisit(false)">Reject (Host)</button>
+        </div>
+        <div class="row" style="margin-top: 1rem; border-top: 1px solid #eee; padding-top: 1rem;">
+          <button class="btn" onclick="verifyVisitor()">Verify (Guard)</button>
+          <button class="btn" onclick="issuePass()">Issue Pass</button>
+        </div>
+        <div class="row">
+          <button class="btn secondary" onclick="recordMovement('entry')">Record Entry</button>
+          <button class="btn secondary" onclick="recordMovement('exit')">Record Exit</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>3. Exceptions & Incidents</h3>
+        <label for="exc_visit_id">Visit ID</label>
+        <input id="exc_visit_id" placeholder="PK" />
+        <button class="btn" style="background: #dc2626;" onclick="reportLostPass()">Report LOST Pass</button>
+        <button class="btn" style="background: #4b5563;" onclick="fetchGet('/incidents/')">View Security Logs</button>
+      </div>
+
+      <div class="card">
+        <h3>4. Audit & Performance</h3>
+        <button class="btn secondary" onclick="fetchGet('/reports/')">Full Scaling Report</button>
+        <button class="btn secondary" onclick="fetchGet('/active/')">Active Visitors (Prefetched)</button>
+        <button class="btn secondary" onclick="fetchGet('/recent/')">Recent Visits (Prefetched)</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 2rem;">
+      <h3>XHR/JSON Response Output</h3>
+      <pre id="output">{ "info": "Waiting for action..." }</pre>
+    </div>
+  </div>
+
+  <script>
+    const getHeaders = () => ({
+      "Content-Type": "application/json",
+      "Authorization": `Token ${document.getElementById('token').value.trim()}`
+    });
+
+    const base = () => document.getElementById('baseUrl').value.trim().replace(/\/$/, "");
+
+    const show = (data) => {
+      document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+    };
+
+    async function apiRequest(path, method, body) {
+      try {
+        const res = await fetch(base() + path, {
+          method: method,
+          headers: getHeaders(),
+          body: body ? JSON.stringify(body) : null
+        });
+        const data = await res.json();
+        show({ status: res.status, ok: res.ok, data });
+      } catch (err) {
+        show({ error: String(err) });
+      }
+    }
+
+    const fetchGet = (path) => apiRequest(path, "GET");
+
+    function registerVisitor() {
+      apiRequest("/register/", "POST", {
+        full_name: document.getElementById('full_name').value,
+        id_number: document.getElementById('id_number').value,
+        id_type: document.getElementById('id_type').value,
+        purpose: document.getElementById('purpose').value,
+        host_user_id: document.getElementById('host_user_id').value ? Number(document.getElementById('host_user_id').value) : null,
+        host_name: "Host Placeholder",
+        host_department: "Dept Placeholder"
+      });
+    }
+
+    function approveVisit(approved) {
+      apiRequest("/approve/", "POST", {
+        visit_id: Number(document.getElementById('visit_id').value),
+        approved: approved
+      });
+    }
+
+    function verifyVisitor() {
+      apiRequest("/verify/", "POST", {
+        visit_id: Number(document.getElementById('visit_id').value),
+        result: true
+      });
+    }
+
+    function issuePass() {
+      apiRequest("/pass/", "POST", { visit_id: Number(document.getElementById('visit_id').value) });
+    }
+
+    function recordMovement(action) {
+      apiRequest(`/${action}/`, "POST", {
+        visit_id: Number(document.getElementById('visit_id').value),
+        gate_name: "Main Gate Alpha"
+      });
+    }
+
+    function reportLostPass() {
+      apiRequest("/lost-pass/", "POST", {
+        visit_id: Number(document.getElementById('exc_visit_id').value)
+      });
+    }
+  </script>
+</body>
+</html>
